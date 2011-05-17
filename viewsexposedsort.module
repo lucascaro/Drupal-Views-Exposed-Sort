@@ -1,0 +1,157 @@
+<?php
+/**
+ * @file Module definition for views exposed sort
+ * 
+ * Allows users to change the sorting of views.
+ */
+
+function viewsexposedsort_form_alter(&$form, $form_state, $form_id) {
+  if ($form_id == 'views_ui_edit_display_form') {
+//    dpm($form);
+//    dpm($form_state);
+    if ( $form_state['#section'] == 'default-style_options') {
+      $view =& $form_state['view'];
+      $display_id = $form_state['display_id'];
+
+      $display = $view->display[$display_id];
+      $options = $display->handler->get_field_labels();
+      $sort_fields = viewsexposedsort_get_style_option($view, $display_id, 
+              'viewsexposedsort_sortfields', array());
+      $sort_title = viewsexposedsort_get_style_option($view, $display_id, 
+              'viewsexposedsort_title', 'Sort by');
+      
+      $form['style_options']["viewsexposedsort_sortfields"] = array(
+            '#type'           => 'checkboxes',
+            '#title'          => t('Exposed Sort Fields'),
+            '#options'        => $options,
+            '#default_value'  => $sort_fields,
+            '#description'    =>  t('Check the fields to show as sort options'),
+            '#weight'         => -10,
+      );
+      $form['style_options']["viewsexposedsort_title"] = array(
+        '#type' => 'textfield',
+        '#title' => t('Exposed Sort Title'),
+        '#default_value' => $sort_title,
+        '#weight'         => -9,
+      );
+//      $form['#submit'][] = 'viewsexposedsort_save_sortfields';
+      $form['buttons']['submit']['#submit'][] = 'viewsexposedsort_save_sortfields';
+    }
+  }
+}
+
+function viewsexposedsort_get_style_option($view, $display_id, $option, $default = NULL) {
+  $result = $default;
+  if (!empty($view->display[$display_id]->display_options['style_options'][$option])) {
+    $result = $view->display[$display_id]->display_options['style_options'][$option];
+  }
+  else if(!empty($view->display['default']->display_options['style_options'][$option])) {
+    $result = $view->display['default']->display_options['style_options'][$option];
+  }
+  return $result;
+}
+function viewsexposedsort_theme($existing, $type, $theme, $path) {
+  $items['views_exposed_sort'] = array (
+    'arguments' => array('view' => NULL,'title' => NULL),
+    'template' => 'views_exposed_sort',
+    'path' => $path . DIRECTORY_SEPARATOR . 'templates',
+  );
+  
+  return $items;
+}
+
+//function viewsexposedsort_save_sortfields($form, &$form_state) {
+//  if (!empty($form_state['values']['style_options']['viewsexposedsort_sortfields'])) {
+//    $value = array_filter($form_state['values']['style_options']['viewsexposedsort_sortfields']);
+//  }
+//  else {
+//    $value = array();
+//  }
+////  variable_set('buildingrating_tweaks_sortfields', $value);
+////  dpm($form);
+////  dpm($form_state);
+////  dpm($value);
+//  
+//  $view =& $form_state['view'];
+//  $display_id = $form_state['display_id'];
+//  $display =& $view->display[$display_id];
+////  dpm($view);
+////  dpm($view->get_items($display_id));
+////  $display->handler->set_option('exposed_sort', $value);
+////  $view->set_item($display_id, 'options', 'exposed_sort', $value);
+////d, $type, $id, $item)
+//}
+
+/**
+* Implementation of hook_views_api().
+* @return Array with Views API version.
+*/
+function viewsexposedsort_views_api() {
+  return array('api' => 2.0);
+}
+
+/**
+ * Add sort fields
+ */
+
+function viewsexposedsort_views_query_alter(&$view, &$query) {
+  $default_order_field = '';//'field_date_published_value';
+  $sort_fields = array();
+  $display_id = $view->current_display;
+  $display = $view->display[$display_id];
+
+   $allowed_sort_fields = viewsexposedsort_get_style_option($view, $display_id, 
+              'viewsexposedsort_sortfields', array());
+  
+  $allowed_sort_fields = array_filter($allowed_sort_fields);
+  if (!empty($allowed_sort_fields)) {
+    if (!empty($_GET['sort'])) {
+      $sort = db_escape_string($_GET['sort']);
+      if (!empty($_GET['dir'])) {
+        $dir = db_escape_string($_GET['dir']);
+      }
+      else {
+        $dir = 'DESC';      
+      }
+
+      $query->orderby[0] = "$sort $dir";
+
+    }
+    $sort_fields = array();
+
+    $fields = $view->display['default']->display_options['fields'];
+    foreach ($allowed_sort_fields as $field_key) {
+      if (array_key_exists($field_key, $query->fields)) {
+        $field = $query->fields[$field_key];
+      }
+      else if (array_key_exists ($field_key, $view->display['default']->display_options['fields'])) {
+        $field = $view->display['default']->display_options['fields'][$field_key];
+      }
+      if (!empty($field)) {
+        if(!isset($sort_fields[$field['field']])) {
+    //            dpr($field);
+          $sort_fields[$field['field']] = array(
+            'field' => $field['field'],
+            'alias' => (!empty($field['alias'])?$field['alias']:$field['field']),
+            'label' => (!empty($field['label']) ? $field['label'] : $field['field']),
+            'table' => $field['table'],
+          );
+        }
+      }
+    }
+
+    $view->args['sort_fields'] = $sort_fields;
+  }
+}
+
+/**
+ * Attach sort buttons
+ */
+function viewsexposedsort_views_pre_render(&$view) {
+  if (!empty($view->args['sort_fields'])) {
+    $display_id = $view->current_display;
+    $sort_title = viewsexposedsort_get_style_option($view, $display_id, 
+          'viewsexposedsort_title', 'Sort by');
+    $view->attachment_before = theme('views_exposed_sort', $view, $sort_title);
+  }
+}

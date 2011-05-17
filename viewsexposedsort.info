@@ -1,0 +1,5 @@
+name = "Views Exposed Sort"
+description = "Add Exposed Sort to views"
+core = 6.x
+package = Views
+dependencies[] = views
